@@ -105,7 +105,6 @@ public class ImageStreamReader {
     try {
           // The limit was chosen so it would not drop frames for reasonable lags of the main thread.
        if (numImagesInTransit > 2) {
-         Log.d(TAG, "Dropping frame due to images pending on main thread.");
          image.close();
          return;
        }
