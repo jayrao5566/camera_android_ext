@@ -33,6 +33,13 @@ public class ImageStreamReader {
   private final ImageReader imageReader;
   private final ImageStreamReaderUtils imageStreamReaderUtils;
 
+   /**
+    * This solves a memory issue, when the main thread hangs (e.g. when pausing the debugger) while
+    * many frames are being sent using android.os.Handler.post(). This causes an OOM error rather
+    * quickly. So to avoid this we apply some back-pressure.
+    */
+   private static int numImagesInTransit = 0;
+
   /**
    * Creates a new instance of the {@link ImageStreamReader}.
    *
@@ -96,6 +103,12 @@ public class ImageStreamReader {
       @NonNull CameraCaptureProperties captureProps,
       @NonNull EventChannel.EventSink imageStreamSink) {
     try {
+          // The limit was chosen so it would not drop frames for reasonable lags of the main thread.
+       if (numImagesInTransit > 2) {
+         Log.d(TAG, "Dropping frame due to images pending on main thread.");
+         image.close();
+         return;
+       }
       Map<String, Object> imageBuffer = new HashMap<>();
 
       // Get plane data ready
@@ -115,7 +128,14 @@ public class ImageStreamReader {
           "sensorSensitivity", sensorSensitivity == null ? null : (double) sensorSensitivity);
 
       final Handler handler = new Handler(Looper.getMainLooper());
-      handler.post(() -> imageStreamSink.success(imageBuffer));
+      // handler.post(() -> imageStreamSink.success(imageBuffer));
+      ++numImagesInTransit;
+       boolean postResult =
+           handler.post(
+               () -> {
+                 imageStreamSink.success(imageBuffer);
+                 --numImagesInTransit;
+               });
       image.close();
 
     } catch (IllegalStateException e) {
